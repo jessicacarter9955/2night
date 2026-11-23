@@ -84,8 +84,12 @@ export function InspectOverlay({
           if (!r.width || !r.height) { setFit(null); return }
           const w = stats?.snapshot?.w || canvas.width
           const h = stats?.snapshot?.h || canvas.height
-          setFit({ w: r.width, h: r.height, ox: r.left - bounds.left,
-            oy: r.top - bounds.top, naturalW: w, naturalH: h })
+          // Canvas coordinates are relative to the iframe viewport, not the parent.
+          const iframeRect = frame?.getBoundingClientRect()
+          setFit({ w: r.width, h: r.height,
+            ox: (iframeRect?.left ?? 0) + r.left - bounds.left,
+            oy: (iframeRect?.top ?? 0) + r.top - bounds.top,
+            naturalW: w, naturalH: h })
         } catch {
           setFit(null)
         }
@@ -108,11 +112,11 @@ export function InspectOverlay({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape' && !(mode === 'live' && playing)) onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, mode, playing])
 
   const active = hoveredIndex !== null ? matches[hoveredIndex] :
     matches.find((m) => m.id === selectedId)
