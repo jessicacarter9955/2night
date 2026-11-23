@@ -227,103 +227,124 @@ class Matcher:
                 break
         return best
 
-def build_templates_gm(game_dir):
-    """GameMaker: crop dei frame dagli atlanti originali (registro _M)."""
+# The serverless function has a limited memory budget. Build only a bounded,
+# preselected set of templates; never decode every PNG/animation in the game.
+MAX_TEMPLATES = 24
+MAX_CROP_AREA = 360000
+
+def build_templates_gm(game_dir, only=None):
+    """GameMaker: extract only a small number of frames from the original atlas."""
     reg = json.load(open(os.path.join(game_dir, "registry.json"), encoding="utf-8"))
+    candidates = list(reg.get("sprites", []))
+    if only:
+        candidates = [s for s in candidates
+                      if f"sprite:{s['name']}" in only or s["name"] in only]
+    else:
+        keywords = re.compile(r"title|logo|menu|bg|button|press|start|play|dancer|icon", re.I)
+        candidates.sort(key=lambda s: (not bool(keywords.search(s["name"])), s["index"]))
+        candidates = candidates[:18]
+    used_pages = {f["page"] for s in candidates for f in s.get("frames", [])[:3]}
     pages = {}
-    for t in reg["textures"]:
-        p = os.path.join(game_dir, t["file"])  # file include già html5game/
+    for t in reg.get("textures", []):
+        if t["index"] not in used_pages:
+            continue
+        p = os.path.join(game_dir, t["file"])
         if os.path.exists(p):
-            pages[t["index"]] = cv2.imread(p, cv2.IMREAD_UNCHANGED)
+            pages[t["index"]] = cv2.imread(p, cv2.IMREAD_GRAYSCALE)
     out = []
-    for s in reg.get("sprites", []):
-        for fi, f in enumerate(s.get("frames", [])):
+    for s in candidates:
+        for fi, f in enumerate(s.get("frames", [])[:3]):
             page = pages.get(f["page"])
             if page is None:
                 continue
-            x, y, w, h = f["x"], f["y"], f["w"], f["h"]
+            x, y, w, h = (int(f[k]) for k in ("x", "y", "w", "h"))
+            if w < MIN_TPL or h < MIN_TPL or w * h > MAX_CROP_AREA:
+                continue
             if y + h > page.shape[0] or x + w > page.shape[1]:
                 continue
-            crop = page[y:y + h, x:x + w]
-            if crop.shape[2] == 4:
-                gray = cv2.cvtColor(crop, cv2.COLOR_BGRA2GRAY)
-            else:
-                gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
             out.append({
-                "id": f"sprite:{s['index']}",
+                "id": f"sprite:{s['name']}",
                 "name": s["name"] if s.get("frameCount", 1) == 1 else f"{s['name']}[{fi}]",
-                "gray": gray,
+                "gray": page[y:y+h, x:x+w].copy(),
                 "w": w, "h": h,
                 "meta": {"page": f["page"], "ax": x, "ay": y},
             })
+            if len(out) >= MAX_TEMPLATES:
+                return out
     return out
 
-def build_templates_fnf(game_dir, max_side=1920):
-    """FNF: png interi + subtexture Sparrow dai .xml originali.
-    Template già in grayscale per limitare la memoria; i crop più grandi
-    dello schermo di gioco (×2) vengono scartati: non sono localizzabili."""
+
+def build_templates_fnf(game_dir, only=None):
+    """OpenFL: limit PNGs before decoding and sample a few Sparrow atlas frames."""
     reg = json.load(open(os.path.join(game_dir, "registry.json"), encoding="utf-8"))
+    files = [f for f in reg.get("files", []) if f.get("type") == "png"]
+    if only:
+        files = [f for f in files if f"file:{f['path']}" in only
+                 or f["path"] in only]
+    else:
+        # Best-effort first-screen/menu/gameplay samples, NOT exhaustive.
+        preferred = ("logoBumpin.png", "gfDanceTitle.png", "titleEnter.png",
+                     "FNF_main_menu_assets.png", "menuBG.png", "menuBGBlue.png",
+                     "NOTE_assets.png", "BOYFRIEND.png", "GF_assets.png")
+        files = [f for f in files if any(f["path"].endswith(p) for p in preferred)]
     out = []
-    for f in reg.get("files", []):
-        if f.get("type") != "png":
-            continue
+    for f in files[:8]:
         p = os.path.join(game_dir, f["path"])
-        if not os.path.exists(p):
+        if not os.path.isfile(p):
             continue
-        img = cv2.imread(p, cv2.IMREAD_UNCHANGED)
+        img = cv2.imread(p, cv2.IMREAD_GRAYSCALE)
         if img is None:
             continue
-        img_gray = (cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY) if img.shape[2] == 4
-                    else cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
-        del img
         xml_path = p[:-4] + ".xml"
         if os.path.exists(xml_path):
             xml = open(xml_path, encoding="utf-8", errors="replace").read()
-            for m in re.finditer(
+            frames = list(re.finditer(
                 r'<SubTexture[^>]*name="([^"]+)"[^>]*?x="(\d+)"[^>]*?y="(\d+)"'
-                r'[^>]*?width="(\d+)"[^>]*?height="(\d+)"', xml):
-                name, sx, sy, sw, sh = m.group(1), int(m.group(2)), int(m.group(3)), int(m.group(4)), int(m.group(5))
-                if sy + sh > img_gray.shape[0] or sx + sw > img_gray.shape[1]:
+                r'[^>]*?width="(\d+)"[^>]*?height="(\d+)"', xml))
+            # Sample across the animation instead of retaining hundreds of frames.
+            stride = max(1, len(frames) // 4)
+            for m in frames[::stride][:4]:
+                name, sx, sy, sw, sh = (m.group(1), int(m.group(2)),
+                                         int(m.group(3)), int(m.group(4)), int(m.group(5)))
+                if sw < MIN_TPL or sh < MIN_TPL or sw * sh > MAX_CROP_AREA:
                     continue
-                if sw > max_side or sh > max_side:
+                if sy + sh > img.shape[0] or sx + sw > img.shape[1]:
                     continue
                 out.append({
                     "id": f"file:{f['path']}",
                     "name": f"{os.path.basename(f['path'])}@{name}",
-                    "gray": img_gray[sy:sy + sh, sx:sx + sw].copy(),
-                    "w": sw, "h": sh,
-                    "meta": {"rect": [sx, sy]},
+                    "gray": img[sy:sy + sh, sx:sx + sw].copy(),
+                    "w": sw, "h": sh, "meta": {"rect": [sx, sy]},
                 })
-        else:
-            # png intero (logo, sfondi, UI): disegnabile 1:1
-            if img_gray.shape[1] > max_side or img_gray.shape[0] > max_side:
-                continue
+        elif img.shape[0] >= MIN_TPL and img.shape[1] >= MIN_TPL \
+                and img.shape[0] * img.shape[1] <= MAX_CROP_AREA:
             out.append({
                 "id": f"file:{f['path']}",
                 "name": os.path.basename(f["path"]),
-                "gray": img_gray.copy(),
-                "w": img_gray.shape[1], "h": img_gray.shape[0],
+                "gray": img.copy(), "w": img.shape[1], "h": img.shape[0],
                 "meta": {},
             })
-    return out
+        if len(out) >= MAX_TEMPLATES:
+            break
+    return out[:MAX_TEMPLATES]
+
 
 def analyze(req):
     """Reusable sprite matching operation called by the native Python API."""
     game_dir = req["gameDir"]
     snap = decode_snapshot(req["image"])
-    only = set(req.get("only") or [])
+    only = set((req.get("only") or [])[:8])
+    cv2.setNumThreads(1)
 
     if os.path.exists(os.path.join(game_dir, "html5game", "benedance.js")):
-        templates = build_templates_gm(game_dir)
+        templates = build_templates_gm(game_dir, only)
         engine = "gamemaker"
     else:
-        templates = build_templates_fnf(game_dir)
+        templates = build_templates_fnf(game_dir, only)
         engine = "openfl"
 
     total_templates = len(templates)
     targeted = bool(only)
-    if targeted:
-        templates = [t for t in templates if t["id"] in only or t["name"] in only]
 
     # dedup dei template pixel-identici (frame ripetuti negli sheet FNF):
     # si confronta una volta il rappresentante, i match si espandono al gruppo
@@ -363,13 +384,13 @@ def analyze(req):
                         hits += matcher.hits_at_scale(tpl_gray, s)
                         break
         # irrisolto e abbastanza grande: scansione di scala gerarchica
-        if not hits and max(tw0, th0) >= MIN_OCCLUDED:
+        if targeted and not hits and max(tw0, th0) >= MIN_OCCLUDED:
             swept += 1
             tried = 0
             for i, (score4, s0, x4, y4) in enumerate(matcher.sweep_scale(tpl_gray)):
                 if score4 < SWEEP_MIN or (i > 0 and score4 < SWEEP_MIN2):
                     break
-                if tried >= 2:
+                if tried >= 1:
                     break
                 tried += 1
                 rh = matcher.refine_scale_half(tpl_gray, s0, x4, y4)
@@ -442,6 +463,8 @@ def analyze(req):
             "unique": len(groups),
             "scaleSweeps": swept,
             "matches": len(matches),
+            "partial": True,
+            "templateLimit": MAX_TEMPLATES,
             "elapsedMs": int((time.time() - t0) * 1000),
         },
     }
