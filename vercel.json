@@ -3,7 +3,8 @@
   "functions": {
     "api/inspect_cv.py": {
       "maxDuration": 60,
-      "excludeFiles": "{node_modules/**,.next/**,download/**,*.zip,**/*.mp3,**/*.ogg,**/*.wav,**/*.woff,**/*.ttf,**/*.otf,**/*.js,**/*.html,**/*.css,**/*.map,preview/**,prisma/**}"
+      "excludeFiles": "{node_modules/**,.next/**,download/**,*.zip,**/*.mp3,**/*.ogg,**/*.wav,**/*.woff,**/*.ttf,**/*.otf,**/*.js,**/*.html,**/*.css,**/*.map,preview/**,prisma/**}",
+      "includeFiles": "{scripts/inspect_match.py,public/games/**}"
     }
   }
 }
