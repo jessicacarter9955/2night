@@ -307,8 +307,8 @@ def build_templates_fnf(game_dir, max_side=1920):
             })
     return out
 
-def main():
-    req = json.loads(sys.stdin.read())
+def analyze(req):
+    """Reusable sprite matching operation called by the native Python API."""
     game_dir = req["gameDir"]
     snap = decode_snapshot(req["image"])
     only = set(req.get("only") or [])
@@ -432,7 +432,7 @@ def main():
         seen[key] = True
         unique.append(m)
     matches = unique[:MAX_MATCHES]
-    print(json.dumps({
+    return {
         "matches": matches,
         "stats": {
             "engine": engine,
@@ -444,7 +444,12 @@ def main():
             "matches": len(matches),
             "elapsedMs": int((time.time() - t0) * 1000),
         },
-    }, ensure_ascii=False))
+    }
+
+
+def main():
+    print(json.dumps(analyze(json.loads(sys.stdin.read())), ensure_ascii=False))
+
 
 if __name__ == "__main__":
     main()
