@@ -212,7 +212,7 @@ export default function Home() {
       setInspectSnapshot(shot)
       setInspectBusyLabel('Cerco gli elementi (confronto pixel esatto)…')
       try {
-        const r = await fetch('/api/inspect', {
+        const r = await fetch('/api/inspect_cv', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
