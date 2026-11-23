@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import traceback
+import time
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
@@ -69,6 +70,9 @@ class handler(BaseHTTPRequestHandler):
                 self.reply(400, {"error": "Snapshot mancante"})
                 return
 
+            started = time.monotonic()
+            print("[inspect] start game=%s targeted=%d bytes=%d" %
+                  (game, len(payload.get("only") or []), size), flush=True)
             from scripts.inspect_match import analyze
 
             result = analyze({
@@ -78,9 +82,14 @@ class handler(BaseHTTPRequestHandler):
                     str(x) for x in (payload.get("only") or [])[:64]
                 ],
             })
+            print("[inspect] done game=%s matches=%s templates=%s elapsed=%.2fs" %
+                  (game, len(result.get("matches", [])),
+                   result.get("stats", {}).get("templates"),
+                   time.monotonic() - started), flush=True)
             self.reply(200, result)
         except Exception as exc:
             # I log Vercel contengono il traceback, non la risposta HTTP.
+            print("[inspect] exception %s" % type(exc).__name__, flush=True)
             traceback.print_exc()
             self.reply(500, {"error": f"Ispezione non riuscita: {type(exc).__name__}"})
 
