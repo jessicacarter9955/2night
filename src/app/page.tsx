@@ -18,6 +18,7 @@ import {
   InspectOverlay,
   InspectMatch,
   InspectStats,
+  InspectMode,
 } from '@/components/inspect-overlay'
 import {
   GameRegistry,
@@ -28,7 +29,7 @@ import {
   downloadJson,
 } from '@/lib/asset-types'
 import { normalizeRegistry } from '@/lib/registry'
-import { captureGameCanvas } from '@/lib/capture'
+import { captureGameCanvas, dropLiveMirror } from '@/lib/capture'
 
 export default function Home() {
   const [games, setGames] = useState<GamesIndex['games']>([])
@@ -50,6 +51,13 @@ export default function Home() {
   const [inspectBusy, setInspectBusy] = useState(false)
   const [inspectBusyLabel, setInspectBusyLabel] = useState('Catturo la schermata…')
   const [inspectError, setInspectError] = useState<string | null>(null)
+  const [inspectMode, setInspectMode] = useState<InspectMode>('live')
+  const [inspectPlaying, setInspectPlaying] = useState(false)
+  const [inspectLogs, setInspectLogs] = useState<string[]>([])
+  const [inspectElapsed, setInspectElapsed] = useState(0)
+  const inspectController = useRef<AbortController | null>(null)
+  const inspectRunId = useRef(0)
+  const inspectBusyRef = useRef(false)
 
   const stageRef = useRef<HTMLDivElement>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
@@ -73,6 +81,14 @@ export default function Home() {
     setScreens([])
     setReskin({})
     setSelected(null)
+    inspectRunId.current++
+    inspectController.current?.abort()
+    inspectBusyRef.current = false
+    dropLiveMirror()
+    setInspectBusy(false)
+    setInspectMode('live')
+    setInspectPlaying(false)
+    setInspectLogs([])
     setInspectOpen(false)
     setInspectSnapshot(null)
     setInspectMatches([])
@@ -147,6 +163,12 @@ export default function Home() {
   const activeGame = games.find((g) => g.id === activeId) ?? null
 
   const resetTransient = useCallback(() => {
+    inspectRunId.current++
+    inspectController.current?.abort()
+    inspectBusyRef.current = false
+    dropLiveMirror()
+    setInspectOpen(false)
+    setInspectBusy(false)
     setSelected(null)
     setLoaded(false)
     setReloadToken((t) => t + 1)
@@ -185,63 +207,144 @@ export default function Home() {
       .catch(() => undefined)
   }, [activeGame])
 
-  const onSelectAsset = useCallback((a: RegistryAsset) => {
-    setSelected(a)
-    setShowInspector(true)
+  const cancelInspect = useCallback(() => {
+    inspectRunId.current++
+    inspectController.current?.abort()
+    inspectController.current = null
+    inspectBusyRef.current = false
+    setInspectBusy(false)
+    setInspectLogs((logs) => [...logs.slice(-15), '[browser] Analisi interrotta'])
+    setInspectBusyLabel('Analisi interrotta')
   }, [])
 
-  // Modalità ispezione: fissa la schermata (snapshot canvas) e misura gli
-  // elementi visibili per confronto pixel esatto con il registro originale.
+  // A request is bounded on both sides. A terminated Vercel function returns
+  // a diagnostic error instead of leaving the user on "Catturo..." forever.
   const runInspect = useCallback(
-    async (opts?: { targetId?: string; only?: string[] }) => {
+    async (opts?: { mode?: InspectMode; only?: string[] }) => {
       if (!activeGame) return
+      const mode = opts?.mode ?? inspectMode
+      const only = opts?.only ??
+        ((selected?.kind === 'sprite' || selected?.kind === 'image')
+          ? [selected.id] : [])
+      inspectController.current?.abort()
+      const controller = new AbortController()
+      inspectController.current = controller
+      const run = ++inspectRunId.current
+      inspectBusyRef.current = true
       setInspectOpen(true)
       setInspectBusy(true)
       setInspectError(null)
-      setInspectBusyLabel(
-        opts?.targetId ? 'Cerco l’elemento sulla schermata fissa…' : 'Catturo la schermata…',
-      )
-      const shot = await captureGameCanvas(iframeRef.current)
-      if (!shot) {
-        setInspectBusy(false)
-        setInspectError(
-          'Non riesco a leggere il canvas del gioco. Avvia il gioco, poi premi «Aggiorna schermata».',
-        )
-        return
+      setInspectElapsed(0)
+      setInspectMatches([])
+      setInspectStats(null)
+      setInspectLogs([])
+      const started = Date.now()
+      const log = (message: string) => {
+        if (run !== inspectRunId.current) return
+        console.info('[2Night Inspect]', message)
+        setInspectBusyLabel(message)
+        setInspectLogs((entries) => [...entries.slice(-17),
+          '[' + Math.floor((Date.now()-started)/1000) + 's] ' + message])
       }
-      setInspectSnapshot(shot)
-      setInspectBusyLabel('Cerco gli elementi (confronto pixel esatto)…')
+      const tick = window.setInterval(() => {
+        if (run === inspectRunId.current) {
+          setInspectElapsed(Math.floor((Date.now()-started)/1000))
+        }
+      }, 1000)
+      const deadline = window.setTimeout(() => controller.abort(), 25000)
       try {
-        const r = await fetch('/api/inspect_cv', {
+        log('Cerco il canvas del gioco in questa schermata…')
+        const shot = await captureGameCanvas(iframeRef.current, {
+          signal: controller.signal, onProgress: log,
+        })
+        if (controller.signal.aborted) throw new Error('Timeout di cattura')
+        if (!shot) throw new Error(
+          'Impossibile catturare il canvas. Il gioco potrebbe non aver ancora ' +
+          'disegnato il primo frame oppure il browser blocca WebGL/captureStream. ' +
+          'Prova dopo il caricamento o cambia schermata.',
+        )
+        if (mode === 'snapshot') setInspectSnapshot(shot)
+        log('Frame acquisito (' + Math.round(shot.length/1024) +
+          ' KB). Invio ' + (only.length ? only.length + ' asset selezionati' :
+            'ricerca rapida limitata') + ' al matcher OpenCV…')
+        const response = await fetch('/api/inspect_cv', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            game: activeGame.id,
-            image: shot,
-            only: opts?.only,
-          }),
+          signal: controller.signal,
+          body: JSON.stringify({ game: activeGame.id, image: shot, only }),
         })
-        const d = (await r.json()) as {
-          matches?: InspectMatch[]
-          stats?: InspectStats
-          error?: string
+        const body = await response.text()
+        let data: { matches?: InspectMatch[]; stats?: InspectStats; error?: string }
+        try { data = JSON.parse(body) } catch {
+          throw new Error('Il server non ha restituito JSON (HTTP ' +
+            response.status + '). Potrebbe aver esaurito la memoria.')
         }
-        if (!r.ok) throw new Error(d.error ?? 'errore di misura')
-        setInspectMatches(d.matches ?? [])
-        setInspectStats(d.stats ?? null)
-        if ((d.matches ?? []).length === 0 && opts?.targetId) {
-          setInspectError(
-            'Questo elemento non è presente sulla schermata attuale (il confronto cerca copie pixel 1:1: sprite scalati o ruotati non vengono misurati).',
-          )
+        if (!response.ok) throw new Error(data.error ||
+          'Errore server HTTP ' + response.status)
+        if (run !== inspectRunId.current) return
+        const matches = data.matches ?? []
+        setInspectMatches(matches)
+        setInspectStats(data.stats ?? null)
+        const ms = data.stats?.elapsedMs ?? 0
+        log('Analisi completata: ' + matches.length + ' match · ' +
+          (data.stats?.templates ?? 0) + ' template · ' + ms + ' ms server')
+        if (matches.length === 0) {
+          log('Nessun match. Prova a selezionare un altro sprite dalla sidebar; ' +
+            'la scansione rapida non include tutte le risorse.')
         }
-      } catch (e) {
-        setInspectError(e instanceof Error ? e.message : 'errore di misura')
+      } catch (error) {
+        if (run !== inspectRunId.current) return
+        const message = controller.signal.aborted
+          ? 'Analisi scaduta dopo 25 secondi o annullata. La funzione Vercel ' +
+            'potrebbe essere lenta o aver superato la memoria. Riprova ' +
+            'selezionando un singolo sprite.'
+          : (error instanceof Error ? error.message : 'Errore sconosciuto')
+        log('ERRORE: ' + message)
+        setInspectError(message)
       } finally {
-        setInspectBusy(false)
+        window.clearTimeout(deadline)
+        window.clearInterval(tick)
+        if (run === inspectRunId.current) {
+          inspectBusyRef.current = false
+          inspectController.current = null
+          setInspectBusy(false)
+        }
       }
     },
-    [activeGame],
+    [activeGame, inspectMode, selected],
   )
+
+  const onSelectAsset = useCallback((a: RegistryAsset) => {
+    setSelected(a)
+    setShowInspector(true)
+    if (inspectOpen && inspectMode === 'live' &&
+      (a.kind === 'sprite' || a.kind === 'image')) {
+      void runInspect({ mode: 'live', only: [a.id] })
+    }
+  }, [inspectOpen, inspectMode, runInspect])
+
+  const closeInspect = useCallback(() => {
+    cancelInspect()
+    setInspectOpen(false)
+    dropLiveMirror()
+  }, [cancelInspect])
+
+  const toggleInspectMode = useCallback(() => {
+    const next = inspectMode === 'live' ? 'snapshot' : 'live'
+    setInspectMode(next)
+    setInspectPlaying(false)
+    void runInspect({ mode: next })
+  }, [inspectMode, runInspect])
+
+  useEffect(() => {
+    if (!inspectOpen || inspectMode !== 'live' || inspectError) return
+    const timer = window.setInterval(() => {
+      if (!inspectBusyRef.current && document.visibilityState === 'visible') {
+        void runInspect({ mode: 'live' })
+      }
+    }, 12000)
+    return () => window.clearInterval(timer)
+  }, [inspectOpen, inspectMode, inspectError, runInspect])
 
   const onSelectMatch = useCallback(
     (m: InspectMatch) => {
@@ -383,7 +486,7 @@ export default function Home() {
           {/* pulsante cursore: entra in modalità ispezione, come in DevTools */}
           {!inspectOpen && (
             <button
-              onClick={() => void runInspect()}
+              onClick={() => { setInspectMode('live'); setInspectPlaying(false); void runInspect({ mode: 'live' }) }}
               disabled={inspectBusy}
               title="Ispeziona gli elementi della schermata attuale (snapshot + confronto pixel)"
               aria-label="Ispeziona elementi"
@@ -397,16 +500,29 @@ export default function Home() {
           {inspectOpen && (
             <InspectOverlay
               gameId={activeGame?.id ?? ''}
+              frame={iframeRef.current}
+              mode={inspectMode}
+              playing={inspectPlaying}
               snapshot={inspectSnapshot}
               matches={inspectMatches}
               stats={inspectStats}
               busy={inspectBusy}
               busyLabel={inspectBusyLabel}
+              elapsed={inspectElapsed}
+              logs={inspectLogs}
               error={inspectError}
-              selectedId={inspectTargetId}
-              onRefresh={() => void runInspect()}
+              selectedId={selected?.id ?? null}
+              onRefresh={() => void runInspect({ mode: inspectMode })}
+              onCancel={cancelInspect}
+              onToggleMode={toggleInspectMode}
+              onTogglePlaying={() => setInspectPlaying((p) => !p)}
               onSelectMatch={onSelectMatch}
-              onClose={() => setInspectOpen(false)}
+              onPickPoint={({ x, y }) => {
+                setInspectLogs((lines) => [...lines.slice(-17),
+                  'Punto sul canvas: ' + x + ', ' + y +
+                  '. Seleziona una texture/sprite nella sidebar per cercarlo.'])
+              }}
+              onClose={closeInspect}
             />
           )}
 
@@ -436,7 +552,7 @@ export default function Home() {
                 registry={registry}
                 reskin={reskin}
                 onInspectAsset={() =>
-                  void runInspect({ targetId: selected.id, only: [selected.id] })
+                  void runInspect({ mode: inspectMode, only: [selected.id] })
                 }
                 onReloadGame={reloadGame}
                 onReskinChanged={refreshReskin}
