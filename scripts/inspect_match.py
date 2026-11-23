@@ -336,7 +336,7 @@ def analyze(req):
     only = set((req.get("only") or [])[:8])
     cv2.setNumThreads(1)
 
-    if os.path.exists(os.path.join(game_dir, "html5game", "benedance.js")):
+    if os.path.basename(os.path.normpath(game_dir)) == "chainsaw-dance":
         templates = build_templates_gm(game_dir, only)
         engine = "gamemaker"
     else:
@@ -365,7 +365,11 @@ def analyze(req):
     evaluated = swept = 0
     matches = []
     t0 = time.time()
+    time_limit_hit = False
     for rep, members in groups:
+        if time.time() - t0 > 12:
+            time_limit_hit = True
+            break
         evaluated += 1
         tpl_gray = rep["gray"]
         th0, tw0 = tpl_gray.shape[:2]
@@ -464,6 +468,7 @@ def analyze(req):
             "scaleSweeps": swept,
             "matches": len(matches),
             "partial": True,
+            "timeLimitHit": time_limit_hit,
             "templateLimit": MAX_TEMPLATES,
             "elapsedMs": int((time.time() - t0) * 1000),
         },
