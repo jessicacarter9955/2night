@@ -250,7 +250,7 @@ def build_templates_gm(game_dir):
             else:
                 gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
             out.append({
-                "id": f"sprite:{s['name']}",
+                "id": f"sprite:{s['index']}",
                 "name": s["name"] if s.get("frameCount", 1) == 1 else f"{s['name']}[{fi}]",
                 "gray": gray,
                 "w": w, "h": h,
