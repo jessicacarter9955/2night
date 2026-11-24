@@ -160,6 +160,15 @@
   window.__2nightDrawInspector = {
     version: 1,
     engine: 'openfl',
+    // Runtime-only bridge for game-specific animation adapter.
+    // The ID is emitted by the native draw inspector. Returned sprite
+    // is never serialized or transmitted to a backend.
+    getSprite: function(id) {
+      var value = String(id || '');
+      if (!/^flx:[0-9]+$/.test(value)) return null;
+      var entry = records.get(Number(value.substring(4)));
+      return entry && entry.sprite || null;
+    },
     read: function() {
       var game = flixel_FlxG.game;
       if (game && flixel_FlxG.autoPause) {
