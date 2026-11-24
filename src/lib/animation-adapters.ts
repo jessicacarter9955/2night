@@ -139,13 +139,37 @@ const gmAdapter: GameAnimationAdapter = {
   release() {},
 }
 
+
+const genericAdapter: GameAnimationAdapter = {
+  inspect(_frame, element) {
+    return {
+      id:element.id,gameId:'generic',engine:element.engine,
+      className:element.className||'Sprite',
+      atlas:element.source||'',graphicWidth:0,graphicHeight:0,
+      frame:element.frame||'',activeClip:'Frame corrente',
+      currentPosition:0,paused:false,sceneFrozen:false,
+      clips:[{
+        name:'Frame corrente',frameRate:0,looped:false,current:true,
+        frames:[{position:0,index:0,name:element.frame||element.name}],
+      }],
+      supported:false,
+      explanation:'Adapter generico: geometria e asset disponibili. '+
+        'Per la timeline completa e il controllo runtime, installa il bridge del motore.',
+    }
+  },
+  control(){return notSupported},
+  async applyAtlas(){return notSupported},
+  restore(){return notSupported},
+  release(){},
+}
+
 export const gameAnimationAdapters: Record<string, GameAnimationAdapter> = {
   'friday-night-funkin': fnfAdapter,
   'chainsaw-dance': gmAdapter,
 }
 
 export function animationAdapter(gameId: string): GameAnimationAdapter {
-  return gameAnimationAdapters[gameId] || gmAdapter
+  return gameAnimationAdapters[gameId] || genericAdapter
 }
 
 export function assetUrl(gameId: string, rel: string): string | null {
