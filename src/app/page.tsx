@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { AssetSidebar } from '@/components/asset-sidebar'
 import { AssetInspector } from '@/components/asset-inspector'
 import { NativeInspectorOverlay } from '@/components/native-inspector-overlay'
+import { ScreenSwitcher } from '@/components/screen-switcher'
 import { RuntimeElement } from '@/lib/runtime-inspector'
 import {
   GameRegistry, GameScreen, GamesIndex, RegistryAsset,
@@ -159,7 +160,7 @@ export default function Home() {
 
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col bg-zinc-950 text-zinc-100">
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-zinc-800 bg-zinc-900/80 px-3 py-2.5 backdrop-blur">
+      <header className="relative z-40 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-zinc-800 bg-zinc-900/80 px-3 py-2.5 backdrop-blur">
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" title="Pannello asset"
             aria-label="Mostra/nascondi il pannello asset"
@@ -190,6 +191,13 @@ export default function Home() {
           </Button>
         </div>
         <div className="flex items-center gap-2">
+          <ScreenSwitcher
+            game={activeGame}
+            screens={screens}
+            frameRef={iframeRef}
+            onRestart={resetGame}
+            onInspect={() => setInspectOpen(true)}
+          />
           {registry && (
             <Button variant="outline" size="sm" onClick={exportRegistry}
               className="h-9 gap-1.5 border-zinc-700 bg-zinc-800/60 text-xs text-zinc-300">
