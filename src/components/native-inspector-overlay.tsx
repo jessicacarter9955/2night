@@ -146,7 +146,6 @@ export function NativeInspectorOverlay({
     const item = selectAt(pointRef.current.x, pointRef.current.y, hoverCycle)
     pickRef.current = item
     setHoveredId(item?.id ?? null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene, playing, hoverCycle])
 
   useEffect(() => {
