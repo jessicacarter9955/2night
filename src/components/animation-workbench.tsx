@@ -128,6 +128,7 @@ export function AnimationWorkbench({
   const [clipName,setClipName] = useState<string>('')
   const [position,setPosition] = useState(0)
   const [timelineExpanded,setTimelineExpanded] = useState(true)
+  const [showGuide,setShowGuide] = useState(false)
   const [atlas,setAtlas] = useState<AtlasLoaded | null>(null)
   const [atlasError,setAtlasError] = useState<string | null>(null)
   const [status,setStatus] = useState<string | null>(null)
@@ -385,6 +386,10 @@ export function AnimationWorkbench({
           {title} · {snapshot?.className||element.className}
         </span>
         <div className="ml-auto flex gap-1">
+          <Button size="sm" variant="outline" onClick={()=>setShowGuide(v=>!v)}
+            className="h-8 border-sky-700 bg-sky-950/40 text-[11px] text-sky-200">
+            {showGuide?'Chiudi guida':'Guida reskin'}
+          </Button>
           <Button size="sm" variant="outline" onClick={()=>
             setTimelineExpanded(v=>!v)}
             className="h-8 border-zinc-700 bg-zinc-800 text-xs">
@@ -402,6 +407,21 @@ export function AnimationWorkbench({
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
+          {showGuide&&(
+            <div className="border-b border-sky-800/50 bg-sky-950/30 px-4 py-3 text-[11px] text-zinc-200">
+              <strong className="text-sky-300">Come reskinnare questo personaggio</strong>
+              <ol className="mt-2 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
+                <li>1 · Seleziona l’animazione e congela la scena.</li>
+                <li>2 · Scegli un frame, controlla offset e rettangoli condivisi.</li>
+                <li>3 · Carica un PNG delle stesse dimensioni, oppure un atlante intero.</li>
+                <li>4 · Confronta nel gioco, esporta e pubblica su GitHub.</li>
+              </ol>
+              <p className="mt-2 text-amber-200/90">
+                Attenzione: i frame con rettangoli condivisi cambiano insieme.
+                La pubblicazione richiede il codice server-side configurato.
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-3 p-3 md:grid-cols-[minmax(0,1fr)_minmax(240px,320px)] md:p-4">
             <div className="min-w-0 space-y-3">
               <div className="flex flex-wrap items-center gap-2">
