@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Download,
   Eye, EyeOff, Film, Loader2, Pause, Play, RotateCcw, Save, SkipBack,
@@ -20,7 +20,7 @@ interface Props {
   gameId: string
   element: RuntimeElement
   registry: GameRegistry | null
-  frame: HTMLIFrameElement | null
+  frameRef: RefObject<HTMLIFrameElement | null>
   onClose: () => void
 }
 
@@ -121,7 +121,7 @@ function formatBytes(bytes:number):string {
 }
 
 export function AnimationWorkbench({
-  gameId,element,registry,frame,onClose,
+  gameId,element,registry,frameRef,onClose,
 }:Props) {
   const adapter = useMemo(()=>animationAdapter(gameId),[gameId])
   const [snapshot,setSnapshot] = useState<AnimationSnapshot | null>(null)
@@ -161,7 +161,7 @@ export function AnimationWorkbench({
     currentClipRef.current=''
     changedFrameRef.current=false
     const update=()=>{
-      const next=adapter.inspect(frame,element,registry)
+      const next=adapter.inspect(frameRef.current,element,registry)
       if(!next) return
       snapshotRef.current=next
       setSnapshot(next)
@@ -177,16 +177,16 @@ export function AnimationWorkbench({
     const timer=window.setInterval(update,350)
     return ()=>{
       window.clearInterval(timer)
-      adapter.release(frame)
+      adapter.release(frameRef.current)
       // Unsaved live previews should not leak into later workbench sessions.
-      adapter.restore(frame,element)
+      adapter.restore(frameRef.current,element)
     }
-  },[adapter,element.id,frame,gameId,registry]) // intentional reset on selected sprite
+  },[adapter,element.id,frameRef,gameId,registry]) // intentional reset on selected sprite
 
   useEffect(()=>{
     const source=snapshot?.atlas
     const url=source ? assetUrl(gameId,source) : null
-    if(!url) return
+    if(!url||!source) return
     let ignore=false
     const abort = new AbortController()
     setAtlas(null);setAtlasError(null)
@@ -228,7 +228,7 @@ export function AnimationWorkbench({
   const control=useCallback((action:'freeze'|'unfreeze'|'seek'|'playClip',options?:{
     name?:string;position?:number
   })=>{
-    const result=adapter.control(frame,element,action,options)
+    const result=adapter.control(frameRef.current,element,action,options)
     if(!result.ok) setError(result.error||'Comando non riuscito')
     else {
       setError(null)
@@ -237,7 +237,7 @@ export function AnimationWorkbench({
         : action==='freeze'?'Scena e audio congelati.'
         : action==='unfreeze'?'Gameplay ripreso.':'Riproduzione animazione avviata.')
     }
-  },[adapter,frame,element])
+  },[adapter,frameRef,element])
 
   const seek=(index:number)=>{
     if(!clip||!framesCount) return
@@ -259,7 +259,7 @@ export function AnimationWorkbench({
     setBusy(false)
     setStatus('Reskin preparato. Il PNG originale non è stato modificato.')
     if(snapshot?.supported) {
-      const result=await adapter.applyAtlas(frame,element,dataUrl)
+      const result=await adapter.applyAtlas(frameRef.current,element,dataUrl)
       if(result.ok) {
         setIsPreview(true)
         setStatus('Anteprima applicata nel renderer HaxeFlixel ('+
@@ -325,7 +325,7 @@ export function AnimationWorkbench({
   }
 
   const resetWorking=()=>{
-    const result=adapter.restore(frame,element)
+    const result=adapter.restore(frameRef.current,element)
     if(!result.ok && snapshot?.supported) {
       setError(result.error||'Ripristino fallito')
       return
@@ -340,11 +340,11 @@ export function AnimationWorkbench({
     if(!working)return
     setBusy(true)
     if(isPreview) {
-      const r=adapter.restore(frame,element)
+      const r=adapter.restore(frameRef.current,element)
       if(r.ok) {setIsPreview(false);setError(null)}
       else setError(r.error||'Ripristino non riuscito')
     }else{
-      const r=await adapter.applyAtlas(frame,element,working.dataUrl)
+      const r=await adapter.applyAtlas(frameRef.current,element,working.dataUrl)
       if(r.ok){setIsPreview(true);setError(null)}
       else setError(r.error||'Anteprima non riuscita')
     }
