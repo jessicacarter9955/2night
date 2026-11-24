@@ -267,7 +267,7 @@ export default function Home() {
               gameId={activeGame.id}
               element={animationElement}
               registry={registry}
-              frame={iframeRef.current}
+              frameRef={iframeRef}
               onClose={() => setAnimationElement(null)}
             />
           )}
