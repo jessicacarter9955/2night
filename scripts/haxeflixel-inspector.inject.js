@@ -161,6 +161,11 @@
     version: 1,
     engine: 'openfl',
     read: function() {
+      var game = flixel_FlxG.game;
+      if (game && flixel_FlxG.autoPause) {
+        flixel_FlxG.autoPause = false;
+        if (game.stage) game.stage.set_frameRate(flixel_FlxG.drawFramerate);
+      }
       var now = performance.now();
       var currentState = syncScene();
       var renderedSinceLastRead = sampleCount !== lastReadDrawCalls;
