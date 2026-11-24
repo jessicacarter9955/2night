@@ -113,13 +113,12 @@
         else fresh.push(item);
       });
       fresh.sort(function(a,b) {return a.order - b.order;});
+      var currentState = flixel_FlxG.game && flixel_FlxG.game._state;
       return {
         items: fresh.slice(-800),
-        screen: flixel_FlxG.state && (
-          (flixel_FlxG.state.__class__ &&
-           flixel_FlxG.state.__class__.__name__) ||
-          (flixel_FlxG.state.constructor &&
-           flixel_FlxG.state.constructor.__name__)
+        screen: currentState && (
+          (currentState.__class__ && currentState.__class__.__name__) ||
+          (currentState.constructor && currentState.constructor.__name__)
         ) || 'OpenFL',
         activeDrawCalls: sampleCount,
         errors: errors,
