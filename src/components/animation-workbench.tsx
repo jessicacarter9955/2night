@@ -7,6 +7,7 @@ import {
   SkipForward, Upload, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { publishReskin } from '@/lib/github-publish'
 import { animationAdapter, assetUrl, AnimationClip, AnimationSnapshot } from '@/lib/animation-adapters'
 import {
   AtlasDocument, AtlasFrame, AtlasPatch, composeAtlas, downloadBlob,
@@ -137,6 +138,8 @@ export function AnimationWorkbench({
   const [isPreview,setIsPreview] = useState(false)
   const [publishing,setPublishing] = useState(false)
   const [canPublish,setCanPublish] = useState(false)
+  const [publishSecret,setPublishSecret] = useState('')
+  const [publishStatus,setPublishStatus] = useState('')
   const [showOriginal,setShowOriginal] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const wholeRef = useRef<HTMLInputElement>(null)
@@ -351,19 +354,17 @@ export function AnimationWorkbench({
     if(!working||!atlas)return
     setPublishing(true);setError(null)
     try{
-      const path=atlas.doc.pngUrl.replace(
+      const assetPath=atlas.doc.pngUrl.replace(
         new RegExp('^/games/'+gameId+'/'),'')
-      const response=await fetch('/api/publish-reskin',{
-        method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          game:gameId,path,dataUrl:working.dataUrl,
-          note:'2Night animation workbench · '+(clip?.name||'atlante'),
-        }),
+      const result=await publishReskin({
+        game:gameId,path:assetPath,blob:working.blob,
+        secret:publishSecret,
+        note:'2Night Animation Workbench · '+(clip?.name||'atlante'),
+        onProgress:(progress)=>setPublishStatus(progress.message),
       })
-      const body=await response.json()
-      if(!response.ok)throw new Error(body.error||'GitHub non disponibile')
-      setStatus('Pubblicato su GitHub! Commit '+String(body.commit||'').slice(0,10)+
-        '. Vercel aggiornerà il gioco al prossimo deploy.')
+      setStatus('Pubblicato su GitHub! Commit '+result.commit.slice(0,12)+
+        '. Il deploy Vercel applicherà il nuovo PNG.')
+      setPublishSecret('')
     }catch(e){
       setError(e instanceof Error?e.message:'Pubblicazione fallita')
     }finally{setPublishing(false)}
@@ -551,6 +552,21 @@ export function AnimationWorkbench({
                     {formatBytes(working.blob.size)} · {patchCount||'atlante intero'}{' '}
                     modifica{patchCount===1?'':'he'}
                   </div>
+                  {canPublish&&(
+                    <label className="block text-[10px] text-zinc-400">
+                      Codice di pubblicazione GitHub (server-side)
+                      <input type="password" value={publishSecret}
+                        autoComplete="off"
+                        onChange={(e)=>setPublishSecret(e.target.value)}
+                        placeholder="Codice di pubblicazione"
+                        aria-label="Codice di pubblicazione"
+                        className="mt-1 h-9 w-full rounded border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-100"/>
+                    </label>
+                  )}
+                  {publishing&&<p role="status" className="text-[10px] text-sky-300">
+                    <Loader2 className="mr-1 inline h-3 w-3 animate-spin"/>
+                    {publishStatus}
+                  </p>}
                   <div className="grid grid-cols-2 gap-2">
                     <Button size="sm" variant="outline" disabled={!snapshot.supported||busy}
                       onClick={()=>void togglePreview()}
@@ -569,7 +585,7 @@ export function AnimationWorkbench({
                       className="h-9 gap-1 border-zinc-700 bg-zinc-800 text-[11px]">
                       <Download className="h-3.5 w-3.5"/> Esporta PNG
                     </Button>
-                    <Button size="sm" disabled={!canPublish||publishing||busy}
+                    <Button size="sm" disabled={!canPublish||publishing||busy||!publishSecret}
                       onClick={()=>void publish()}
                       title={canPublish?'Pubblica tramite API GitHub protetta':
                         'GitHub non configurato: aggiungi GITHUB_RESKIN_TOKEN su Vercel'}
