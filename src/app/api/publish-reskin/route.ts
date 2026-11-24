@@ -69,7 +69,7 @@ function pngSize(data:Buffer):{width:number;height:number}|null {
   return width>0&&height>0?{width,height}:null
 }
 
-async function api<T extends GitResponse = GitResponse>(
+async function api<T extends object = GitResponse>(
   endpoint:string,method='GET',body?:GitResponse,
 ):Promise<T> {
   const response=await fetch(
@@ -182,11 +182,26 @@ export async function POST(req:Request){
       const ref=await api<{object:{sha:string}}>('/git/ref/heads/'+BRANCH)
       const previous=await api<{tree:{sha:string}}>(
         '/git/commits/'+ref.object.sha)
+      let record:Record<string,unknown>={}
+      const metadataPath=path.join(
+        process.cwd(),'public','games',game,'reskin.json')
+      try{record=JSON.parse(await fs.readFile(metadataPath,'utf8'))}
+      catch{record={}}
+      record[String(body.path)] = {
+        file:String(body.path),
+        appliedAt:new Date().toISOString(),
+        kind:'file',
+        sizeBytes:combined.length,
+        targets:[],
+        note,
+      }
       const tree=await api<{sha:string}>('/git/trees','POST',{
         base_tree:previous.tree.sha,
-        tree:[{
-          path:asset.path,mode:'100644',type:'blob',sha:complete.sha,
-        }],
+        tree:[
+          {path:asset.path,mode:'100644',type:'blob',sha:complete.sha},
+          {path:'public/games/'+game+'/reskin.json',mode:'100644',
+            type:'blob',content:JSON.stringify(record,null,2)+'\n'},
+        ],
       })
       const commit=await api<{sha:string}>('/git/commits','POST',{
         message:'reskin('+game+'): update '+path.basename(asset.path)+
