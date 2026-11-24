@@ -1,10 +1,3 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": {
-    "api/inspect_cv.py": {
-      "maxDuration": 60,
-      "excludeFiles": "{node_modules/**,.next/**,download/**,**/_original/**,**/*.zip,**/*.mp3,**/*.ogg,**/*.wav,**/*.js,**/*.html,**/*.css,**/*.map,**/*.woff,**/*.ttf,**/*.otf,preview/**,prisma/**}",
-      "includeFiles": "{scripts/inspect_match.py,public/games/**/{registry.json,*.png,*.xml}}"
-    }
-  }
+  "$schema": "https://openapi.vercel.sh/vercel.json"
 }
