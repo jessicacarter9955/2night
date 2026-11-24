@@ -150,7 +150,10 @@ export function animationAdapter(gameId: string): GameAnimationAdapter {
 
 export function assetUrl(gameId: string, rel: string): string | null {
   // Reject arbitrary schemes, traversal and paths outside the game.
-  const value = rel.replace(/\\/g, '/').replace(/^\/+/, '')
+  // HaxeFlixel prefixes asset keys with library names, e.g.
+  // "shared:assets/shared/images/BOYFRIEND.png" or "week1:assets/...".
+  const value = rel.replace(/^(?:shared|week[0-9]+|preload):/i, '')
+    .replace(/\\/g, '/').replace(/^\/+/, '')
   if (!value || value.includes('..') || /^(data|blob|https?):/i.test(value)) {
     return null
   }
