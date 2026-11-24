@@ -25,6 +25,15 @@
         return { ok: false, error: 'Destinazione mancante' };
       }
       var game = flixel_FlxG.game;
+      // The editor's controls live outside the game iframe. Clicking them
+      // normally triggers HaxeFlixel autoPause, which prevents transitions
+      // and makes the switcher appear stuck. Keep the actual game ticking.
+      if (flixel_FlxG.autoPause) {
+        flixel_FlxG.autoPause = false;
+        if (game && game.stage) {
+          game.stage.set_frameRate(flixel_FlxG.drawFramerate);
+        }
+      }
       if (!game || !game._state) {
         return { ok: false, error: 'Il motore non è ancora pronto' };
       }
