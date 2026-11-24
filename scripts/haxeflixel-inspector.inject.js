@@ -11,6 +11,45 @@
   var sequence = 0;
   var sampleCount = 0;
   var errors = 0;
+  var lastState = null;
+  var lastReadDrawCalls = 0;
+
+  function getState() {
+    return flixel_FlxG.game && flixel_FlxG.game._state || null;
+  }
+
+  // The FlxGame renderer stops drawing when the iframe loses focus.
+  // Keep the last visible draw records in that case: the pixels are
+  // still present on the canvas. A new scene must not retain old sprites.
+  function syncScene() {
+    var current = getState();
+    if (current !== lastState) {
+      records.clear();
+      lastState = current;
+      lastReadDrawCalls = sampleCount;
+    }
+    return current;
+  }
+
+  function liveMembers(root) {
+    var live = new Set();
+    var visited = new WeakSet();
+    var remaining = 5000;
+    function walk(node, depth) {
+      if (!node || typeof node !== 'object' || visited.has(node) ||
+          depth > 12 || remaining-- <= 0 ||
+          node.visible === false || node.exists === false) return;
+      visited.add(node);
+      if (node instanceof flixel_FlxSprite) live.add(node);
+      var members = node.members;
+      if (Array.isArray(members)) {
+        for (var i = 0; i < members.length; i++) walk(members[i], depth + 1);
+      }
+      if (node._subState) walk(node._subState, depth + 1);
+    }
+    walk(root, 0);
+    return live;
+  }
 
   function number(value, fallback) {
     return typeof value === 'number' && isFinite(value) ? value : fallback;
@@ -27,6 +66,7 @@
   }
 
   function record(sprite, camera, complex) {
+    syncScene();
     if (!sprite || sprite.alpha <= 0 || !sprite.visible || !sprite.exists) return;
     var frame = sprite._frame || sprite.frame;
     if (!frame) return;
@@ -62,15 +102,21 @@
     var frames = sprite.frames || {};
     var assetKey = graphics.key || (frames.parent && frames.parent.key) || '';
     var frameName = frame.name || '';
+    // FlxText and custom text classes often generate a bitmap frame.
+    // The user-facing text is the actual node identity.
+    var label = typeof sprite.text === 'string' && sprite.text.trim()
+      ? sprite.text.trim().slice(0, 120) : '';
     var className = (sprite.__class__ && sprite.__class__.__name__) ||
       (sprite.constructor && sprite.constructor.__name__) || 'FlxSprite';
     var anim = sprite.animation && sprite.animation._curAnim;
     var animName = anim && (anim.name || anim._name) || '';
     var cameraInfo = camera || {};
     records.set(uid, {
+      sprite: sprite,
+      data: {
       id: 'flx:' + uid,
       engine: 'openfl',
-      name: String(frameName || className),
+      name: String(label || frameName || className),
       className: String(className),
       source: String(assetKey),
       frame: String(frameName),
@@ -86,7 +132,8 @@
       cameraX: number(cameraInfo.x, 0), cameraY: number(cameraInfo.y, 0),
       order: ++sequence,
       lastSeen: performance.now(),
-      sourceType: 'actual draw call'
+      sourceType: label ? 'Live FlxText draw call' : 'actual draw call'
+      }
     });
     sampleCount++;
   }
@@ -107,19 +154,37 @@
     engine: 'openfl',
     read: function() {
       var now = performance.now();
+      var currentState = syncScene();
+      var renderedSinceLastRead = sampleCount !== lastReadDrawCalls;
+      var active = liveMembers(currentState);
       var fresh = [];
-      records.forEach(function(item, key) {
-        if (now - item.lastSeen > 900) records.delete(key);
-        else fresh.push(item);
+      records.forEach(function(entry, key) {
+        var sprite = entry.sprite;
+        if (!sprite || sprite.exists === false || sprite.visible === false ||
+            sprite.alpha <= 0) {
+          records.delete(key);
+          return;
+        }
+        var stillInScene = active.has(sprite);
+        var elapsed = now - entry.data.lastSeen;
+        // Do NOT use a wall-clock TTL if the renderer is paused.
+        // HaxeFlixel pauses on blur; previously all boxes vanished in 900ms.
+        // When drawing resumes, only prune abandoned off-tree objects.
+        if (!stillInScene && renderedSinceLastRead && elapsed > 2500) {
+          records.delete(key);
+          return;
+        }
+        fresh.push(entry.data);
       });
-      fresh.sort(function(a,b) {return a.order - b.order;});
-      var currentState = flixel_FlxG.game && flixel_FlxG.game._state;
+      lastReadDrawCalls = sampleCount;
+      fresh.sort(function(a,b) { return a.order - b.order; });
       return {
         items: fresh.slice(-800),
         screen: currentState && (
           (currentState.__class__ && currentState.__class__.__name__) ||
           (currentState.constructor && currentState.constructor.__name__)
         ) || 'OpenFL',
+        paused: !renderedSinceLastRead,
         activeDrawCalls: sampleCount,
         errors: errors,
         canvasW: (flixel_FlxG.width || 1280),
