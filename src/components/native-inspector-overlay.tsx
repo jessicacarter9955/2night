@@ -2,7 +2,7 @@
 
 import { RefObject, useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Check, ChevronDown, CircleDot, Crosshair, Eye, EyeOff, Info,
+  Check, ChevronDown, CircleDot, Crosshair, Eye, EyeOff, Film, Info,
   MousePointer2, Play, RefreshCw, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,7 @@ interface Props {
   registry: GameRegistry | null
   selectedAssetId: string | null
   onSelectElement: (item: RuntimeElement) => void
+  onOpenAnimation: (item: RuntimeElement) => void
   onClose: () => void
 }
 
@@ -48,7 +49,8 @@ function hitTest(items: RuntimeElement[], x: number, y: number): RuntimeElement[
 }
 
 export function NativeInspectorOverlay({
-  frameRef, gameId, registry, selectedAssetId, onSelectElement, onClose,
+  frameRef, gameId, registry, selectedAssetId, onSelectElement,
+  onOpenAnimation, onClose,
 }: Props) {
   const [scene, setScene] = useState<RenderState>({
     ready: false, engine: 'unknown', items: [],
@@ -273,6 +275,11 @@ export function NativeInspectorOverlay({
             <>
               <p className="break-all font-semibold text-zinc-100">{selected.name}</p>
               <p className="mt-1 text-[10px] text-emerald-300">{selected.sourceType}</p>
+              <button onClick={() => onOpenAnimation(selected)}
+                className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-sky-600 bg-sky-900/60 px-3 py-2 text-[11px] font-semibold text-sky-100 hover:bg-sky-800"
+                title="Apri i frame animati reali di questo elemento">
+                <Film className="h-4 w-4"/> Animation Workbench · Timeline
+              </button>
               <div className="my-3 rounded-lg border border-dashed border-sky-600 bg-sky-950/15 p-3">
                 <div className="rounded border border-sky-400/70 bg-sky-500/10 px-2 py-4 text-center font-mono">
                   <span className="block text-[10px] text-sky-300">DRAW BOX</span>

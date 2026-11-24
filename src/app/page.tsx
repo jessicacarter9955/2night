@@ -10,6 +10,7 @@ import { AssetSidebar } from '@/components/asset-sidebar'
 import { AssetInspector } from '@/components/asset-inspector'
 import { NativeInspectorOverlay } from '@/components/native-inspector-overlay'
 import { ScreenSwitcher } from '@/components/screen-switcher'
+import { AnimationWorkbench } from '@/components/animation-workbench'
 import { RuntimeElement } from '@/lib/runtime-inspector'
 import {
   GameRegistry, GameScreen, GamesIndex, RegistryAsset,
@@ -29,6 +30,7 @@ export default function Home() {
   const [loaded, setLoaded] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
   const [inspectOpen, setInspectOpen] = useState(false)
+  const [animationElement, setAnimationElement] = useState<RuntimeElement | null>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const activeGame = games.find((g) => g.id === activeId) ?? null
@@ -51,6 +53,7 @@ export default function Home() {
     if (!game) return
     let cancelled = false
     setInspectOpen(false)
+    setAnimationElement(null)
     setLoaded(false)
     setRegistry(null)
     setScreens([])
@@ -118,6 +121,7 @@ export default function Home() {
 
   const resetGame = useCallback(() => {
     setInspectOpen(false)
+    setAnimationElement(null)
     setLoaded(false)
     setSelected(null)
     setReloadToken((value) => value + 1)
@@ -253,7 +257,18 @@ export default function Home() {
               registry={registry}
               selectedAssetId={selected?.id ?? null}
               onSelectElement={selectRuntimeElement}
-              onClose={() => setInspectOpen(false)}
+              onOpenAnimation={(item) => setAnimationElement(item)}
+              onClose={() => {setInspectOpen(false);setAnimationElement(null)}}
+            />
+          )}
+          {animationElement && activeGame && (
+            <AnimationWorkbench
+              key={activeGame.id+':'+animationElement.id}
+              gameId={activeGame.id}
+              element={animationElement}
+              registry={registry}
+              frameRef={iframeRef}
+              onClose={() => setAnimationElement(null)}
             />
           )}
           {!loaded && !inspectOpen && (

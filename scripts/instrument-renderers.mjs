@@ -10,6 +10,7 @@ const entrypoint = 'ApplicationMain.main();';
 const extensions = [
   ['scripts/haxeflixel-inspector.inject.js', 'function _2nightNativeDrawInspector()'],
   ['scripts/fnf-screen-navigator.inject.js', 'function _2nightScreenNavigator()'],
+  ['scripts/fnf-animation-workbench.inject.js', 'function _2nightFNFAnimationWorkbench()'],
 ];
 
 let source = fs.readFileSync(compiled, 'utf8');
