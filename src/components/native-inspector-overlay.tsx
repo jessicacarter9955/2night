@@ -2,7 +2,7 @@
 
 import { RefObject, useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Check, ChevronDown, CircleDot, Crosshair, Eye, EyeOff, Info,
+  Check, ChevronDown, CircleDot, Crosshair, Eye, EyeOff, Film, Info,
   MousePointer2, Play, RefreshCw, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -49,7 +49,8 @@ function hitTest(items: RuntimeElement[], x: number, y: number): RuntimeElement[
 }
 
 export function NativeInspectorOverlay({
-  frameRef, gameId, registry, selectedAssetId, onSelectElement, onClose,
+  frameRef, gameId, registry, selectedAssetId, onSelectElement,
+  onOpenAnimation, onClose,
 }: Props) {
   const [scene, setScene] = useState<RenderState>({
     ready: false, engine: 'unknown', items: [],
