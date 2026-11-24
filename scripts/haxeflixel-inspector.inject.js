@@ -33,6 +33,7 @@
 
   function liveMembers(root) {
     var live = new Set();
+    var words = [];
     var visited = new WeakSet();
     var remaining = 5000;
     function walk(node, depth) {
@@ -41,6 +42,13 @@
           node.visible === false || node.exists === false) return;
       visited.add(node);
       if (node instanceof flixel_FlxSprite) live.add(node);
+      // Alphabet extends FlxTypedSpriteGroup: its letter sprites live in
+      // node.group.members rather than directly on node.members.
+      if (node.__class__ && node.__class__.__name__ === 'Alphabet' &&
+          typeof node.text === 'string' && node.text.trim()) {
+        words.push(node);
+      }
+      if (node.group && node.group !== node) walk(node.group, depth + 1);
       var members = node.members;
       if (Array.isArray(members)) {
         for (var i = 0; i < members.length; i++) walk(members[i], depth + 1);
@@ -48,7 +56,7 @@
       if (node._subState) walk(node._subState, depth + 1);
     }
     walk(root, 0);
-    return live;
+    return { sprites: live, words: words };
   }
 
   function number(value, fallback) {
@@ -158,6 +166,7 @@
       var renderedSinceLastRead = sampleCount !== lastReadDrawCalls;
       var active = liveMembers(currentState);
       var fresh = [];
+      var bySprite = new WeakMap();
       records.forEach(function(entry, key) {
         var sprite = entry.sprite;
         if (!sprite || sprite.exists === false || sprite.visible === false ||
@@ -165,7 +174,7 @@
           records.delete(key);
           return;
         }
-        var stillInScene = active.has(sprite);
+        var stillInScene = active.sprites.has(sprite);
         var elapsed = now - entry.data.lastSeen;
         // Do NOT use a wall-clock TTL if the renderer is paused.
         // HaxeFlixel pauses on blur; previously all boxes vanished in 900ms.
@@ -175,6 +184,55 @@
           return;
         }
         fresh.push(entry.data);
+        bySprite.set(sprite, entry.data);
+      });
+      // Expose whole rendered words as hover targets. FNF menus implement
+      // Tutorial/Bopeebo etc. as Alphabet containers holding AlphaCharacter
+      // sprite children. Their box is the union of the *real drawn letters*.
+      active.words.forEach(function(group) {
+        var children = group.group && group.group.members || [];
+        var bounds = [];
+        function collect(node, depth) {
+          if (!node || depth > 5 || node.visible === false ||
+              node.exists === false) return;
+          var rect = bySprite.get(node);
+          if (rect) bounds.push(rect);
+          if (node.group && node.group.members) {
+            node.group.members.forEach(function(child) {
+              collect(child, depth + 1);
+            });
+          }
+        }
+        children.forEach(function(child) { collect(child, 0); });
+        if (!bounds.length) return;
+        var left = Math.min.apply(null, bounds.map(function(b) { return b.x; }));
+        var top = Math.min.apply(null, bounds.map(function(b) { return b.y; }));
+        var right = Math.max.apply(null, bounds.map(function(b) { return b.x + b.w; }));
+        var bottom = Math.max.apply(null, bounds.map(function(b) { return b.y + b.h; }));
+        if (!isFinite(left + top + right + bottom) ||
+            right - left < 1 || bottom - top < 1) return;
+        var id = identities.get(group);
+        if (!id) { id = nextId++; identities.set(group, id); }
+        fresh.push({
+          id: 'flx:' + id,
+          engine: 'openfl',
+          name: group.text.trim().slice(0, 140),
+          className: 'Alphabet',
+          source: 'assets/images/alphabet.png',
+          frame: group.text.trim().slice(0, 140),
+          animation: '',
+          x: left, y: top,
+          w: right - left, h: bottom - top,
+          worldX: number(group.x, left), worldY: number(group.y, top),
+          scaleX: number(group.scale && group.scale.x, 1),
+          scaleY: number(group.scale && group.scale.y, 1),
+          angle: number(group.angle, 0),
+          alpha: number(group.alpha, 1),
+          originX: 0, originY: 0,
+          order: Math.max.apply(null, bounds.map(function(b) { return b.order; })) + 0.25,
+          lastSeen: now,
+          sourceType: 'Live Alphabet text group'
+        });
       });
       lastReadDrawCalls = sampleCount;
       fresh.sort(function(a,b) { return a.order - b.order; });
